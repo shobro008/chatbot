@@ -1,10 +1,22 @@
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import sqlite3
-import os
+from fuzzywuzzy import process  # For fuzzy matching
 
 app = Flask(__name__)
 CORS(app)  # Allow requests from all origins
+
+# Synonym mapping for flexibility
+synonyms = {
+    "hr": "Human Resources",
+    "human resources": "Human Resources",
+    "sales rep": "Sales Representative",
+    "team lead": "Manager",
+    "developer": "Engineer"
+}
+
+# List of valid departments for fuzzy matching
+departments = ["Sales", "Engineering", "Marketing", "Human Resources"]
 
 # Database helper function
 def query_db(query, args=(), one=False):
@@ -16,11 +28,26 @@ def query_db(query, args=(), one=False):
     conn.close()
     return (rv[0] if rv else None) if one else rv
 
+# Preprocess query for synonyms and standardization
+def preprocess_query(query):
+    query = query.lower()
+    for key, value in synonyms.items():
+        query = query.replace(key.lower(), value.lower())
+    return query
+
+# Fuzzy matching for department names
+def get_closest_match(query, choices):
+    match, score = process.extractOne(query, choices)
+    if score > 80:  # Set a threshold for matching accuracy
+        return match
+    return None
+
+# Root route to serve the frontend HTML
 @app.route('/', methods=['GET'])
 def home():
     return render_template('index.html')
 
-# Route for chatbot interaction
+# Chatbot route
 @app.route('/chatbot', methods=['GET'])
 def chatbot():
     query = request.args.get('query', '')
@@ -30,55 +57,59 @@ def chatbot():
 
     try:
         if query:
+            # Preprocess the query for synonyms and standardization
+            query = preprocess_query(query)
+
+            # Extract department name using fuzzy matching
+            department = None
+            for word in query.split():
+                closest_match = get_closest_match(word.capitalize(), departments)
+                if closest_match:
+                    department = closest_match
+
             # Query for employees in a specific department
-            if "all employees in the" in query and "department" in query:
-                department = query.split('in the ')[1].split(' department')[0]
-                print(f"Searching employees in department: {department}")  # Debugging
-                sql = "SELECT Name FROM Employees WHERE Department = ?"
+            if department and "all employees" in query:
+                sql = "SELECT Name FROM Employees WHERE LOWER(Department) = LOWER(?)"
                 result = query_db(sql, (department,))
                 if result:
-                    response = {"response": [r['Name'] for r in result]}
+                    response["response"] = [r["Name"] for r in result]
                 else:
-                    response = {"response": f"No employees found in the {department} department."}
+                    response["response"] = f"No employees found in the {department} department."
 
             # Query for the manager of a department
-            elif "manager of the" in query and "department" in query:
-                department = query.split('manager of the ')[1].split(' department')[0]
-                print(f"Searching manager in department: {department}")  # Debugging
-                sql = "SELECT Name FROM Employees WHERE Department = ? AND Position LIKE '%Manager%'"
+            elif department and "manager" in query:
+                sql = """
+                    SELECT Name FROM Employees 
+                    WHERE LOWER(Department) = LOWER(?) AND LOWER(Position) LIKE '%manager%'
+                """
                 result = query_db(sql, (department,))
                 if result:
-                    response = {"response": [r['Name'] for r in result]}
+                    response["response"] = [r["Name"] for r in result]
                 else:
-                    response = {"response": f"No manager found in the {department} department."}
+                    response["response"] = f"No manager found in the {department} department."
 
             # Query for employees hired after a certain date
             elif "hired after" in query:
-                date = query.split('hired after ')[1]
-                print(f"Searching for employees hired after: {date}")  # Debugging
-                sql = "SELECT Name FROM Employees WHERE HireDate > ?"
+                date = query.split("hired after ")[1]
+                sql = "SELECT Name FROM Employees WHERE Hire_Date > ?"
                 result = query_db(sql, (date,))
                 if result:
-                    response = {"response": [r['Name'] for r in result]}
+                    response["response"] = [r["Name"] for r in result]
                 else:
-                    response = {"response": "No employees found hired after the specified date."}
+                    response["response"] = f"No employees found hired after {date}."
 
-            # Query for the total salary expense for a department
-            elif "total salary expense for the" in query and "department" in query:
-                department = query.split('for the ')[1].split(' department')[0]
-                print(f"Calculating salary expense for department: {department}")  # Debugging
-                sql = "SELECT SUM(Salary) FROM Employees WHERE Department = ?"
+            # Query for total salary expense of a department
+            elif department and "total salary expense" in query:
+                sql = "SELECT SUM(Salary) AS TotalSalary FROM Employees WHERE LOWER(Department) = LOWER(?)"
                 result = query_db(sql, (department,))
-                if result[0][0] is not None:
-                    response = {"response": f"Total salary expense for {department} department: ${result[0][0]}"}
-                else:
-                    response = {"response": f"No salary data found for {department} department."}
+                total_salary = result[0]["TotalSalary"] if result[0]["TotalSalary"] else 0
+                response["response"] = f"Total salary expense for {department} department: ${total_salary}"
 
         else:
-            response = {"response": "Please provide a valid query."}
+            response["response"] = "Please provide a valid query."
 
     except Exception as e:
-        response = {"response": f"An error occurred: {str(e)}"}
+        response["response"] = f"An error occurred: {str(e)}"
 
     return jsonify(response)
 

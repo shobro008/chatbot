@@ -37,28 +37,28 @@
 
     <script>
         function sendQuery() {
-            let query = document.getElementById('user-query').value;
-            let chatbox = document.getElementById('chatbox');
+            const query = document.getElementById('user-query').value.trim();
+            const chatbox = document.getElementById('chatbox');
 
-            if (query.trim() === "") {
-                return;
+            if (query === "") {
+                return; // Do nothing if the input is empty
             }
 
             // Display user's message in chatbox
-            chatbox.innerHTML += "<div><b>You:</b> " + query + "</div>";
+            chatbox.innerHTML += `<div><b>You:</b> ${query}</div>`;
 
             // Send query to Flask backend
-            fetch(`/chatbot?query=${encodeURIComponent(query)}`)
+            fetch(`http://127.0.0.1:5000/chatbot?query=${encodeURIComponent(query)}`)
                 .then(response => response.json())
                 .then(data => {
                     // Display the chatbot's response
-                    let response = Array.isArray(data.response) ? data.response.join(", ") : data.response;
-                    chatbox.innerHTML += "<div><b>Chatbot:</b> " + response + "</div>";
+                    const response = Array.isArray(data.response) ? data.response.join(", ") : data.response;
+                    chatbox.innerHTML += `<div><b>Chatbot:</b> ${response}</div>`;
                     chatbox.scrollTop = chatbox.scrollHeight; // Auto-scroll to the bottom
                     document.getElementById('user-query').value = ''; // Clear the input field
                 })
                 .catch(error => {
-                    chatbox.innerHTML += "<div><b>Chatbot:</b> Sorry, there was an error. Please try again later.</div>";
+                    chatbox.innerHTML += `<div><b>Chatbot:</b> Sorry, there was an error. Please try again later.</div>`;
                     chatbox.scrollTop = chatbox.scrollHeight;
                 });
         }

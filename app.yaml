@@ -1,0 +1,14 @@
+runtime: python312  # Use python39 or python312 based on your Python version
+entrypoint: gunicorn -b :$PORT app:app
+
+handlers:
+- url: /
+  static_files: templates/index.html
+  upload: templates/index.html
+
+- url: /static
+  static_dir: static
+
+- url: /.*
+  script: auto
+
